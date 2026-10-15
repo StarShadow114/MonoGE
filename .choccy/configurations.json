@@ -1,0 +1,35 @@
+{
+  "runConfigs": [
+    {
+      "id": "config_1792059801463",
+      "name": "CMake 运行",
+      "languageId": "cpp",
+      "templateId": "cmake_run",
+      "toolchainId": null,
+      "values": {
+        "cmakeLists": "CMakeLists.txt",
+        "buildDir": "cmake-build-debug",
+        "buildType": "Debug"
+      },
+      "beforeRunCommands": [],
+      "androidRunMode": "cli",
+      "executionTarget": "terminal"
+    },
+    {
+      "id": "1792063869904",
+      "name": "CMake 仅构建",
+      "languageId": "cpp",
+      "templateId": "cmake_build_only",
+      "toolchainId": "cpp_default",
+      "values": {
+        "cmakeLists": "CMakeLists.txt",
+        "buildDir": "cmake-build-debug",
+        "buildType": "Debug"
+      },
+      "beforeRunCommands": [],
+      "androidRunMode": "cli",
+      "executionTarget": "terminal"
+    }
+  ],
+  "activeRunConfigId": "config_1792059801463"
+}

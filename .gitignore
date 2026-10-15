@@ -1,0 +1,16 @@
+build/
+out/
+cmake-build-*/
+.choccyide/
+.idea/
+*.iml
+android/app/build/
+android/.gradle/
+*.apk
+*.aab
+.cxx/
+*.so
+*.luac
+.DS_Store
+Thumbs.db
+*.log
