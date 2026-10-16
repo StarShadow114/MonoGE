@@ -4,7 +4,6 @@
 
 #ifdef __ANDROID__
 #include <jni.h>
-#endif
 
 extern input_queue_t g_input;
 
@@ -38,8 +37,6 @@ Java_com_starshadowstudio_game_noa_MonolithNative_getVersion(JNIEnv *env, jobjec
     return (*env)->NewStringUTF(env, monolith_get_version());
 }
 
-// ---- Input injection from Java/Kotlin ----
-
 JNIEXPORT void JNICALL
 Java_com_starshadowstudio_game_noa_MonolithNative_injectTouch(JNIEnv *env, jobject thiz, jint action, jint x, jint y) {
     (void)env; (void)thiz;
@@ -51,3 +48,16 @@ Java_com_starshadowstudio_game_noa_MonolithNative_injectKey(JNIEnv *env, jobject
     (void)env; (void)thiz;
     input_inject_key(&g_input, action, keycode);
 }
+
+#else
+
+/* Non-Android stub implementations - satisfy linker */
+int Java_com_starshadowstudio_game_noa_MonolithNative_init(void) { return 0; }
+void Java_com_starshadowstudio_game_noa_MonolithNative_update(float dt) { (void)dt; }
+void Java_com_starshadowstudio_game_noa_MonolithNative_render(void) {}
+void Java_com_starshadowstudio_game_noa_MonolithNative_shutdown(void) {}
+char* Java_com_starshadowstudio_game_noa_MonolithNative_getVersion(void) { return "0.2.0-stage2"; }
+void Java_com_starshadowstudio_game_noa_MonolithNative_injectTouch(int a, int x, int y) { (void)a; (void)x; (void)y; }
+void Java_com_starshadowstudio_game_noa_MonolithNative_injectKey(int a, int k) { (void)a; (void)k; }
+
+#endif
