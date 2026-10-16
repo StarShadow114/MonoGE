@@ -1,98 +1,78 @@
 #include "monolith.h"
+#include "egl_context.h"
+#include "gles3_renderer.h"
+#include "input.h"
 #include "log.h"
 
 #include <time.h>
 
-static monolith_state_t g_state = MONOLITH_STATE_UNINITIALIZED;
-static double g_start_time = 0.0;
-static unsigned int g_frame_count = 0;
+static egl_state_t      g_egl = {0};
+static gles3_renderer_t g_renderer = {0};
+static input_queue_t    g_input = {0};
+static int              g_running = 0;
+static struct timespec  g_start_time;
 
-static double
-get_time_sec(void)
-{
-#ifdef __ANDROID__
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    return (double)ts.tv_sec + (double)ts.tv_nsec / 1e9;
-#else
-    return 0.0;
-#endif
+float monolith_get_time(void) {
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    return (float)(now.tv_sec - g_start_time.tv_sec)
+         + (float)(now.tv_nsec - g_start_time.tv_nsec) / 1e9f;
 }
 
-int
-monolith_init(void)
-{
-    if (g_state != MONOLITH_STATE_UNINITIALIZED) {
-        LOGW("monolith_init called but already initialized (state=%d)", g_state);
+int monolith_init(void *window, int w, int h) {
+    clock_gettime(CLOCK_MONOTONIC, &g_start_time);
+
+    input_queue_init(&g_input);
+
+    if (egl_ctx_init(&g_egl, window) != 0) {
+        LOGE("MONOLITH: EGL init failed");
         return -1;
     }
 
-    g_start_time = get_time_sec();
-    g_frame_count = 0;
+    if (gles3_renderer_init(&g_renderer, w, h) != 0) {
+        LOGE("MONOLITH: GLES3 renderer init failed");
+        egl_ctx_destroy(&g_egl);
+        return -1;
+    }
 
-    LOGI("═══════════════════════════════════════");
-    LOGI("  Monolith Engine v%s", MONOLITH_VERSION_STRING);
-    LOGI("  Build: %s %s", __DATE__, __TIME__);
-    LOGI("═══════════════════════════════════════");
-
-    /* TODO: stage 2 — EGL/GLES init */
-    /* TODO: stage 3 — Lua 5.4 init */
-    /* TODO: stage 4 — mod loader */
-
-    g_state = MONOLITH_STATE_RUNNING;
-    LOGI("Engine initialized successfully.");
+    g_running = 1;
+    LOGI("MONOLITH: engine initialized v%s", monolith_get_version());
     return 0;
 }
 
-void
-monolith_update(float dt)
-{
-    if (g_state != MONOLITH_STATE_RUNNING) {
-        return;
-    }
+void monolith_resize(int w, int h) {
+    egl_ctx_resize(&g_egl, w, h);
+    gles3_renderer_resize(&g_renderer, w, h);
+}
 
-    /* TODO: stage 8 — player movement/collision */
-    /* TODO: stage 5 — chunk load/unload */
-    /* TODO: stage 4 — Lua update callback */
-
+void monolith_update(float dt) {
     (void)dt;
+
+    input_event_t ev;
+    int processed = 0;
+    while (input_queue_pop(&g_input, &ev) == 0) {
+        processed++;
+        // TODO: dispatch to game logic / Lua VM (stage 3+)
+    }
+    if (processed > 0) {
+        LOGD("MONOLITH: processed %d input events", processed);
+    }
 }
 
-void
-monolith_render(void)
-{
-    if (g_state != MONOLITH_STATE_RUNNING) {
-        return;
-    }
-
-    g_frame_count++;
-
-    if (g_frame_count % 60 == 0) {
-        double elapsed = get_time_sec() - g_start_time;
-        LOGD("Frame %u | Elapsed: %.1fs", g_frame_count, elapsed);
-    }
-
-    /* TODO: stage 2 — glClearColor + gradient */
+void monolith_render(void) {
+    if (!g_running) return;
+    gles3_renderer_render(&g_renderer);
+    egl_ctx_swap(&g_egl);
 }
 
-void
-monolith_shutdown(void)
-{
-    if (g_state == MONOLITH_STATE_SHUTDOWN) {
-        return;
-    }
-
-    LOGI("Shutting down Monolith Engine...");
-    LOGI("Total frames: %u", g_frame_count);
-
-    /* TODO: reverse cleanup — Lua → mods → render → world */
-
-    g_state = MONOLITH_STATE_SHUTDOWN;
-    LOGI("Monolith Engine shutdown complete.");
+void monolith_shutdown(void) {
+    g_running = 0;
+    gles3_renderer_destroy(&g_renderer);
+    egl_ctx_destroy(&g_egl);
+    input_queue_clear(&g_input);
+    LOGI("MONOLITH: engine shutdown");
 }
 
-monolith_state_t
-monolith_get_state(void)
-{
-    return g_state;
+const char *monolith_get_version(void) {
+    return "0.2.0-stage2";
 }
