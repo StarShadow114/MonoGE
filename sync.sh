@@ -2,17 +2,15 @@
 # ============================================================
 # sync.sh — Monolith Engine 增量同步 + Git 操作
 # 用法: ./sync.sh <command> [options]
-# 特性: 增量 rsync | 出错即停 | 自排除
 # ============================================================
 
-set -e  # 任何命令非零退出立即终止
+set -e
 
 SRC="/sdcard/project/MonoGE/MonoGE"
 DST="$HOME/monolite"
 REPO="$DST"
 SELF="sync.sh"
 
-# ---------- 颜色 ----------
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -24,7 +22,6 @@ success() { echo -e "${GREEN}[sync]${NC} $1"; }
 warn()    { echo -e "${YELLOW}[sync]${NC} $1"; }
 die()     { echo -e "${RED}[sync] FATAL:${NC} $1"; exit 1; }
 
-# ---------- 前置检查 ----------
 check_dirs() {
     [ -d "$SRC" ] || die "源目录不存在: $SRC"
     [ -d "$DST" ] || die "目标目录不存在: $DST"
@@ -35,7 +32,6 @@ check_git() {
     [ -d ".git" ] || die "$REPO 不是 git 仓库"
 }
 
-# ---------- rsync 增量同步（核心） ----------
 do_rsync() {
     local dry="$1"
     check_dirs
@@ -47,7 +43,7 @@ do_rsync() {
         --exclude=".git/"
         --exclude="*.so"
         --exclude="cmake-build-*/"
-        --exclude="${SELF}"
+        --exclude="${SELF}" --exclude="remote.sh"
         --exclude="*.sh"
     )
 
@@ -71,7 +67,6 @@ COMMIT_MSG=""
 PUSH=0
 MERGE=0
 MERGE_TARGET="main"
-STATUS=0
 DRY=0
 
 while [ $# -gt 0 ]; do
@@ -106,51 +101,75 @@ commit)
         do_rsync "$DRY"
     fi
 
-    info "添加变更..."
     git add .
-
     if [ -z "$COMMIT_MSG" ]; then
         COMMIT_MSG="sync: $(date '+%Y-%m-%d %H:%M')"
     fi
 
-    info "提交: $COMMIT_MSG"
     git commit -m "$COMMIT_MSG" || warn "没有新改动可提交"
 
     if [ "$PUSH" -eq 1 ]; then
         BRANCH=$(git branch --show-current)
-        info "推送 $BRANCH..."
         git push origin "$BRANCH" || die "推送失败"
-        success "推送完成"
+        success "已推送 $BRANCH"
     fi
     ;;
 
-# ---------- merge ----------
+# ---------- promote: dev → main（独立步骤） ----------
+promote)
+    check_git
+    cd "$REPO"
+
+    [ "$DRY" -eq 1 ] && { info "[DRY] 将执行: checkout main && merge dev && push main"; exit 0; }
+
+    # 确保 dev 干净
+    git checkout dev || die "无法切换到 dev"
+    if [ -n "$(git status --porcelain)" ]; then
+        die "dev 分支有未提交的改动，先 commit 或 stash"
+    fi
+
+    # 切 main，拉最新
+    info "切换到 main..."
+    git checkout main || die "无法切换到 main"
+    git pull origin main || warn "pull main 失败（可能网络问题）"
+
+    # 合并
+    info "合并 dev → main..."
+    if git merge dev --no-edit; then
+        success "dev → main 合并成功"
+    else
+        die "合并冲突！解决步骤:\n  1. git status 看冲突文件\n  2. 编辑解决\n  3. git add <file>\n  4. git commit\n  5. 重跑 ./sync.sh promote"
+    fi
+
+    # 推送
+    if [ "$PUSH" -eq 1 ]; then
+        git push origin main || die "推送 main 失败"
+        success "main 已推送到 origin"
+    fi
+
+    # 切回 dev
+    git checkout dev
+    success "已切回 dev"
+    ;;
+
+# ---------- merge（保留，等价于 promote 但不切回 dev） ----------
 merge)
     check_git
     cd "$REPO"
 
     TARGET="${MERGE_TARGET:-main}"
-    info "合并 dev → $TARGET"
+    [ "$DRY" -eq 1 ] && { info "[DRY] git merge dev → $TARGET"; exit 0; }
 
-    [ "$DRY" -eq 1 ] && { info "[DRY] git checkout $TARGET && git merge dev"; exit 0; }
-
-    git checkout dev || die "无法切换到 dev"
     git checkout "$TARGET" || die "无法切换到 $TARGET"
     git pull origin "$TARGET" 2>/dev/null || true
 
     if git merge dev --no-edit; then
-        success "dev → $TARGET 合并成功"
+        success "合并成功"
     else
-        die "合并冲突！手动解决: git status → 编辑 → git add → git commit"
+        die "合并冲突！手动解决"
     fi
 
-    if [ "$PUSH" -eq 1 ]; then
-        git push origin "$TARGET" || die "推送 $TARGET 失败"
-        success "已推送 $TARGET"
-    fi
-
-    git checkout dev
-    success "切回 dev"
+    [ "$PUSH" -eq 1 ] && { git push origin "$TARGET" || die "推送失败"; }
     ;;
 
 # ---------- push ----------
@@ -158,7 +177,6 @@ push)
     check_git
     cd "$REPO"
     BRANCH=$(git branch --show-current)
-    info "推送 $BRANCH..."
     git push origin "$BRANCH" || die "推送失败"
     success "推送完成"
     ;;
@@ -168,7 +186,6 @@ pull)
     check_git
     cd "$REPO"
     BRANCH=$(git branch --show-current)
-    info "拉取 $BRANCH..."
     git pull origin "$BRANCH" || die "拉取失败"
     success "拉取完成"
     ;;
@@ -184,26 +201,26 @@ status)
 # ---------- ci ----------
 ci)
     info "CI 状态:"
-    gh run list -R StarShadow114/MonoGE --limit 5 || die "gh 命令失败(网络?)"
+    gh run list -R StarShadow114/MonoGE --limit 5 || die "gh 失败"
     ;;
 
-# ---------- all: 全流程，出错即停 ----------
+# ---------- all: copy + commit + push dev（不含 merge） ----------
 all)
     check_dirs
     check_git
     cd "$REPO"
 
-    # 确保 dev 分支存在
-    git show-ref --verify --quiet refs/heads/dev || git checkout -b dev
+    # 确保 dev 分支
+    git show-ref --verify --quiet refs/heads/dev 2>/dev/null || git checkout -b dev
+    git checkout dev || die "无法切换到 dev"
 
-    # ---- Step 1: 切 dev + 增量同步 ----
-    info "═══ Step 1/5: 切到 dev + 增量同步 ═══"
-    git checkout dev || die "Step 1 FAILED: 无法切换到 dev"
+    # ---- Step 1: 增量同步 ----
+    info "═══ Step 1/3: 增量同步 ═══"
     do_rsync "$DRY"
     success "Step 1 完成"
 
     # ---- Step 2: 提交 ----
-    info "═══ Step 2/5: 提交变更 ═══"
+    info "═══ Step 2/3: 提交 ═══"
     git add .
     if [ -z "$COMMIT_MSG" ]; then
         COMMIT_MSG="feat: $(date '+%Y-%m-%d %H:%M')"
@@ -211,73 +228,49 @@ all)
     if git commit -m "$COMMIT_MSG"; then
         success "Step 2 完成: $COMMIT_MSG"
     else
-        warn "Step 2: 无新改动，跳过提交"
+        warn "Step 2: 无新改动，跳过"
     fi
 
     # ---- Step 3: 推送 dev ----
-    info "═══ Step 3/5: 推送 dev ═══"
-    if git push origin dev; then
-        success "Step 3 完成"
-    else
-        die "Step 3 FAILED: dev 推送失败 (可能需要 git pull --rebase)"
-    fi
+    info "═══ Step 3/3: 推送 dev ═══"
+    git push origin dev || die "Step 3 FAILED: dev 推送失败"
 
-    # ---- Step 4: 合并 dev → main ----
-    info "═══ Step 4/5: 合并 dev → main ═══"
-    git checkout main || die "Step 4 FAILED: 无法切换到 main"
-    git pull origin main 2>/dev/null || true
-
-    if git merge dev --no-edit; then
-        success "Step 4 完成: dev → main 合并成功"
-    else
-        die "Step 4 FAILED: 合并冲突！解决后重跑"
-    fi
-
-    # ---- Step 5: 推送 main ----
-    info "═══ Step 5/5: 推送 main ═══"
-    if git push origin main; then
-        success "Step 5 完成"
-    else
-        die "Step 5 FAILED: main 推送失败"
-    fi
-
-    # 切回 dev
-    git checkout dev
     echo ""
     echo "========================================"
-    success "全流程完成！dev → main 已同步"
+    success "all 完成！dev 已更新并推送"
+    echo "  如需合并到 main，单独运行:"
+    echo "  ./sync.sh promote --push"
     echo "========================================"
     ;;
 
 # ---------- help ----------
 help|-h|--help|"")
     echo ""
-    echo "Monolith Engine Sync Script (增量 + 容错)"
-    echo "=========================================="
+    echo "Monolith Engine Sync Script"
+    echo "==========================="
     echo ""
     echo "Commands:"
-    echo "  copy             增量复制 FUSE → monolite (切 dev)"
-    echo "  commit          提交 [--copy 先同步] [--push 后推送]"
-    echo "  merge [--merge main]  合并 dev → main"
-    echo "  push            推送当前分支"
-    echo "  pull            拉取当前分支"
-    echo "  status          显示 git 状态"
-    echo "  ci              查看 CI"
-    echo "  all             全流程 (出错即停)"
+    echo "  copy              增量复制 FUSE → monolite (留 dev 分支)"
+    echo "  commit [opts]     提交当前变更"
+    echo "  promote --push    合并 dev → main 并推送 (独立步骤)"
+    echo "  merge             合并 dev → 指定分支"
+    echo "  push              推送当前分支"
+    echo "  pull              拉取当前分支"
+    echo "  status            显示状态"
+    echo "  ci                查看 CI"
+    echo "  all               全流程: copy + commit + push dev (不含 merge)"
     echo ""
     echo "Options:"
-    echo "  --copy, -c      执行文件同步"
-    echo "  --msg, -m <msg> 提交信息"
-    echo "  --push, -p      操作后推送"
-    echo "  --merge, -mg    合并目标分支 (默认 main)"
-    echo "  --dry, -d       预览模式"
+    echo "  --copy, -c        commit 前先同步"
+    echo "  --msg, -m <msg>   提交信息"
+    echo "  --push, -p        操作后推送"
+    echo "  --dry, -d         预览模式"
     echo ""
-    echo "Examples:"
-    echo "  ./sync.sh copy --dry"
-    echo "  ./sync.sh copy"
-    echo "  ./sync.sh commit --copy --msg 'fix: stdlib.h' --push"
-    echo "  ./sync.sh merge --merge main --push"
-    echo "  ./sync.sh all --msg 'feat: stage 2 EGL'"
+    echo "典型工作流:"
+    echo "  ./sync.sh copy --dry     # 预览"
+    echo "  ./sync.sh copy           # 同步"
+    echo "  ./sync.sh all --msg 'fix: xxx'   # 提交+推 dev"
+    echo "  ./sync.sh promote --push  # 确认无误后合到 main"
     echo ""
     ;;
 

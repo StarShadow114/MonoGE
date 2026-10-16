@@ -2,6 +2,8 @@
 #include <string.h>
 #include "log.h"
 
+input_queue_t g_input;
+
 void input_queue_init(input_queue_t *q) {
     memset(q, 0, sizeof(input_queue_t));
 }
@@ -62,4 +64,11 @@ void input_inject_key(input_queue_t *q, int action, int keycode) {
     ev.keycode = keycode;
     ev.timestamp = 0.0;
     input_queue_push(q, &ev);
+}
+
+#ifdef __GNUC__
+__attribute__((constructor))
+#endif
+static void input_global_init(void) {
+    input_queue_init(&g_input);
 }
