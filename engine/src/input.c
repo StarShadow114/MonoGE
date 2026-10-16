@@ -52,7 +52,6 @@ void input_inject_touch(input_queue_t *q, int action, int x, int y) {
 
     ev.x = x;
     ev.y = y;
-    ev.timestamp = 0.0; // filled by caller if needed
     input_queue_push(q, &ev);
 }
 
@@ -62,7 +61,6 @@ void input_inject_key(input_queue_t *q, int action, int keycode) {
 
     ev.type = (action == 0) ? INPUT_EVENT_KEY_DOWN : INPUT_EVENT_KEY_UP;
     ev.keycode = keycode;
-    ev.timestamp = 0.0;
     input_queue_push(q, &ev);
 }
 
