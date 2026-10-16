@@ -8,7 +8,6 @@
 
 static egl_state_t      g_egl = {0};
 static gles3_renderer_t g_renderer = {0};
-static input_queue_t    g_input = {0};
 static int              g_running = 0;
 static struct timespec  g_start_time;
 
