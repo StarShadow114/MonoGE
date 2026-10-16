@@ -1,3 +1,4 @@
+#include <stdlib.h>
 #include "egl_context.h"
 #include "log.h"
 
