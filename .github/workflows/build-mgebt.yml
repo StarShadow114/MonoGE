@@ -26,7 +26,9 @@ jobs:
 
       - name: Build MGEBT fat jar
         working-directory: mgebt
-        run: ./gradlew jar
+        run:|
+              chmod +./gradlew
+              ./gradlew jar
 
       - name: Test mgebt --version
         working-directory: mgebt
