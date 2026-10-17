@@ -1,47 +1,46 @@
 package com.monoge.mgebt.config
 
-import com.monoge.mgebt.util.FileUtils
 import org.tomlj.Toml
+import org.tomlj.TomlArray
 import java.io.File
 
 data class ProjectConfig(
-    val name: String,
-    val type: String,
+    val projectName: String,
     val version: String,
+    val engineVersion: String,
     val engineArchitectures: List<String>,
-    val outputDir: String
+    val outputDir: String,
+    val sourceDir: String,
+    val assetsDir: String
 ) {
     companion object {
-        fun load(configFile: File = File("project_config.toml")): ProjectConfig {
-            if (!configFile.exists()) {
-                throw IllegalArgumentException("project_config.toml not found in ${configFile.absolutePath}")
-            }
+        fun load(configFile: File): ProjectConfig {
+            val toml = Toml.parse(configFile.toPath())
 
-            val toml = Toml.parse(configFile.readText())
+            val projectName = toml.getString("project.name")
+                ?: throw IllegalArgumentException("Missing project.name in config")
+            val version = toml.getString("project.version") ?: "0.1.0"
+            val engineVersion = toml.getString("engine.version") ?: "0.1.0"
 
-            if (toml.hasErrors()) {
-                throw IllegalArgumentException("Invalid TOML: ${toml.errors()}")
-            }
+            // tomlj uses getArray(), returns TomlArray
+            val engineArchitectures = (toml.getArray("dependencies.engine_architectures"))
+                ?.toList()
+                ?.map { it.toString() }
+                ?: listOf("arm64-v8a")
 
-            val projectTable = toml.getTable("project")
-                ?: throw IllegalArgumentException("Missing [project] section")
+            val outputDir = toml.getString("build.output_dir") ?: "build"
+            val sourceDir = toml.getString("build.source_dir") ?: "src"
+            val assetsDir = toml.getString("build.assets_dir") ?: "assets"
 
-            val name = projectTable.getString("name") ?: "unnamed"
-            val type = projectTable.getString("type") ?: "android"
-            val version = projectTable.getString("version") ?: "0.1.0"
-
-            val engineArchitectures = try {
-                @Suppress("UNCHECKED_CAST")
-                (toml.getList("dependencies.engine_architectures") as? List<Any?>)
-                    ?.map { it.toString() }
-                    ?: listOf("arm64-v8a", "armeabi-v7a")
-            } catch (e: Exception) {
-                listOf("arm64-v8a", "armeabi-v7a")
-            }
-
-            val outputDir = toml.getTable("build")?.getString("output_dir") ?: "build/out"
-
-            return ProjectConfig(name, type, version, engineArchitectures, outputDir)
+            return ProjectConfig(
+                projectName = projectName,
+                version = version,
+                engineVersion = engineVersion,
+                engineArchitectures = engineArchitectures,
+                outputDir = outputDir,
+                sourceDir = sourceDir,
+                assetsDir = assetsDir
+            )
         }
     }
 }
