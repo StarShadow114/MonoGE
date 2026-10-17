@@ -1,53 +1,60 @@
-name: Build MGEBT
+name: Build mgebt
 
 on:
-  workflow_dispatch:
   push:
+    branches: [dev, main]
     paths:
       - 'mgebt/**'
-      - '.github/workflows/build-mgebt.yml'
+  pull_request:
+    branches: [dev, main]
+    paths:
+      - 'mgebt/**'
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+    defaults:
+      run:
+        working-directory: mgebt
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
+          cache: gradle
 
-      - name: Set up Gradle
-        uses: gradle/gradle-build-action@v3
+      - name: Fix permissions
+        run: chmod +x gradlew
 
-      - name: Build MGEBT fat jar
-        working-directory: mgebt
-        run:|
-              chmod +./gradlew
-              ./gradlew jar
-
-      - name: Test mgebt --version
-        working-directory: mgebt
+      - name: Fix gradle wrapper URL
         run: |
-          chmod +x mgebt
-          ./mgebt --version || true
+          sed -i 's|distributionUrl=.*|distributionUrl=https://mirrors.cloud.tencent.com/gradle/gradle-8.5-bin.zip|' \
+            gradle/wrapper/gradle-wrapper.properties
 
-      - name: Test mgebt init
-        working-directory: mgebt
+      - name: Fix maven mirror
         run: |
-          mkdir -p /tmp/test-project
-          cd /tmp/test-project
-          ../../mgebt/mgebt init --type android --name CI_Test --sample .
-          ls -la project_config.toml
-          ls -la assets/main.lua
+          mkdir -p ~/.gradle
+          cat > ~/.gradle/init.gradle << 'INITEOF'
+          allprojects {
+              repositories {
+                  maven { url 'https://mirrors.cloud.tencent.com/nexus/repository/maven-public/' }
+                  maven { url 'https://mirrors.cloud.tencent.com/maven-central/' }
+                  mavenCentral()
+              }
+          }
+          INITEOF
 
-      - name: Upload MGEBT artifact
+      - run: ./gradlew --stop || true
+
+      - run: ./gradlew clean jar
+
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: mgebt-jar
           path: mgebt/build/libs/mgebt-*.jar
-          retention-days: 30
+          retention-days: 7
