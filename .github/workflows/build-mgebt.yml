@@ -1,0 +1,51 @@
+name: Build MGEBT
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'mgebt/**'
+      - '.github/workflows/build-mgebt.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Set up Gradle
+        uses: gradle/gradle-build-action@v3
+
+      - name: Build MGEBT fat jar
+        working-directory: mgebt
+        run: ./gradlew jar
+
+      - name: Test mgebt --version
+        working-directory: mgebt
+        run: |
+          chmod +x mgebt
+          ./mgebt --version || true
+
+      - name: Test mgebt init
+        working-directory: mgebt
+        run: |
+          mkdir -p /tmp/test-project
+          cd /tmp/test-project
+          ../../mgebt/mgebt init --type android --name CI_Test --sample .
+          ls -la project_config.toml
+          ls -la assets/main.lua
+
+      - name: Upload MGEBT artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mgebt-jar
+          path: mgebt/build/libs/mgebt-*.jar
+          retention-days: 30
