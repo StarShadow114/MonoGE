@@ -7,17 +7,15 @@ group = "com.monoge"
 version = "0.1.0-stage3"
 
 repositories {
+    maven { url = uri("https://mirrors.cloud.tencent.com/nexus/repository/maven-public/") }
+    maven { url = uri("https://mirrors.cloud.tencent.com/maven-central/") }
     mavenCentral()
 }
 
 dependencies {
-    implementation("com.moandjiezana.toml:toml4j:0.7.2")
+    implementation("org.jetbrains.kotlin:kotlin-stdlib:1.9.22")
     implementation("info.picocli:picocli:4.7.5")
-    testImplementation(kotlin("test"))
-}
-
-kotlin {
-    jvmToolchain(17)
+    implementation("org.tomlj:tomlj:1.1.1")
 }
 
 application {
@@ -26,17 +24,8 @@ application {
 
 tasks.jar {
     manifest {
-        attributes(
-            "Main-Class" to "com.monoge.mgebt.MainKt",
-            "Implementation-Version" to project.version
-        )
+        attributes["Main-Class"] = "com.monoge.mgebt.MainKt"
     }
-    from(configurations.runtimeClasspath.get().map {
-        if (it.isDirectory) it else zipTree(it)
-    })
+    from(configurations.runtimeClasspath.get().map { if (it.isDirectory) it else zipTree(it) })
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-}
-
-tasks.test {
-    useJUnitPlatform()
 }

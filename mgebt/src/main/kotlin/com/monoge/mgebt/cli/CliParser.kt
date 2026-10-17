@@ -1,34 +1,29 @@
 package com.monoge.mgebt.cli
 
+import com.monoge.mgebt.cli.commands.InitCommand
+import com.monoge.mgebt.cli.commands.ConfigureCommand
+import com.monoge.mgebt.cli.commands.BuildCommand
+import com.monoge.mgebt.cli.commands.CleanCommand
+import com.monoge.mgebt.cli.commands.DaemonCommand
+import com.monoge.mgebt.cli.commands.TaskCommand
 import picocli.CommandLine
+import picocli.CommandLine.Command
 
-object CliParser {
-    private val commandLine = CommandLine(RootCommand()).apply {
-        addSubcommand("init", InitCommand())
-        addSubcommand("configure", ConfigureCommand())
-        addSubcommand("build", BuildCommand())
-        addSubcommand("clean", CleanCommand())
-        addSubcommand("daemon", DaemonCommand())
-        addSubcommand("task", TaskCommand())
-    }
-
-    fun parse(args: Array<String>): Int {
-        return try {
-            commandLine.execute(*args)
-        } catch (e: Exception) {
-            System.err.println("Error: ${e.message}")
-            1
-        }
-    }
-}
-
-@CommandLine.Command(
+@Command(
     name = "mgebt",
-    version = ["MGEBT 0.1.0-stage3"],
-    description = ["MonoGE Build Toolkit"],
-    mixinStandardHelpOptions = true
+    description = ["MonoGE Build Toolkit - CLI build tool for MonoGE projects"],
+    subcommands = [
+        InitCommand::class,
+        ConfigureCommand::class,
+        BuildCommand::class,
+        CleanCommand::class,
+        DaemonCommand::class,
+        TaskCommand::class
+    ],
+    mixinStandardHelpOptions = true,
+    version = ["MGEBT 0.1.0-stage3"]
 )
-class RootCommand : Runnable {
+class CliParser : Runnable {
     override fun run() {
         CommandLine.usage(this, System.out)
     }

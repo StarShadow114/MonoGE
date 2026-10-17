@@ -1,12 +1,18 @@
 package com.monoge.mgebt.task
 
-interface Task {
-    val name: String
-    val description: String
-    val dependencies: List<String>
+import java.io.File
 
-    fun inputs(): List<String>
-    fun outputs(): List<String>
-    fun fingerprint(): String
-    fun execute(): Boolean
+abstract class Task(val name: String) {
+
+    open val description: String = ""
+    open val dependsOn: List<String> = emptyList()
+
+    abstract fun execute()
+
+    open fun shouldRun(inputFiles: List<File>, outputFiles: List<File>): Boolean {
+        // TODO: Phase 3.3 - incremental fingerprint check
+        return true
+    }
+
+    override fun toString(): String = "Task(name='$name')"
 }
