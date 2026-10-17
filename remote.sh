@@ -19,20 +19,37 @@ info()    { echo -e "${CYAN}[remote]${NC} $1"; }
 success() { echo -e "${GREEN}[remote]${NC} $1"; }
 warn()    { echo -e "${YELLOW}[remote]${NC} $1"; }
 die()     { echo -e "${RED}[remote] FATAL:${NC} $1"; exit 1; }
-header()  { echo -e "\n${BOLD}═══ $1 ═══${NC}\n"; }
+header()  { echo; echo -e "${BOLD}═══ $1 ═══${NC}"; echo; }
 
 check_gh() {
-    command -v gh &>/dev/null || die "gh 未安装"
+    command -v gh &>/dev/null || die "gh 未安装 (apt install gh)"
     gh auth status &>/dev/null || die "gh 未登录，先跑 gh auth login"
 }
 
 check_repo() {
-    cd "$HOME/monolite" 2>/dev/null || die "~/monolite 不存在"
+    local d="${MONOLITE_DIR:-$HOME/monolite}"
+    cd "$d" 2>/dev/null || die "$d 不存在"
     [ -d ".git" ] || die "不是 git 仓库"
 }
 
 latest_run_id() {
-    gh run list -R "$REPO" --limit 1 --json databaseId --jq '.[0].databaseId' 2>/dev/null
+    local id
+    id=$(gh run list -R "$REPO" --limit 1 --json databaseId --jq '.[0].databaseId' 2>/dev/null)
+    if [ -z "$id" ] || [ "$id" = "null" ]; then
+        echo ""
+        return 1
+    fi
+    echo "$id"
+}
+
+latest_failed_run_id() {
+    local id
+    id=$(gh run list -R "$REPO" --status failure --limit 1 --json databaseId --jq '.[0].databaseId' 2>/dev/null)
+    if [ -z "$id" ] || [ "$id" = "null" ]; then
+        echo ""
+        return 1
+    fi
+    echo "$id"
 }
 
 CMD="${1:-}"
@@ -97,17 +114,22 @@ fails)
 # ---------- log ----------
 log)
     check_gh
-    RUN_ID=$(latest_run_id)
-    [ -z "$RUN_ID" ] && die "没有找到任何 workflow run"
-    header "最新 Run #$RUN_ID 完整日志"
+    RUN_ID="${1:-}"
+    if [ -z "$RUN_ID" ]; then
+        RUN_ID=$(latest_run_id) || die "没有找到任何 workflow run"
+        shift 2>/dev/null || true
+    fi
+    header "Run #$RUN_ID 完整日志"
     gh run view "$RUN_ID" -R "$REPO" --log
     ;;
 
 # ---------- fail ----------
 fail|error)
     check_gh
-    RUN_ID=$(latest_run_id)
-    [ -z "$RUN_ID" ] && die "没有找到任何 workflow run"
+    RUN_ID="${1:-}"
+    if [ -z "$RUN_ID" ]; then
+        RUN_ID=$(latest_failed_run_id) || die "没有找到失败的 workflow run"
+    fi
     header "Run #$RUN_ID 失败日志"
     gh run view "$RUN_ID" -R "$REPO" --log-failed
     ;;
@@ -116,24 +138,22 @@ fail|error)
 rerun)
     check_gh
     TARGET="${1:-}"
-    if [ -n "$TARGET" ]; then
-        RUN_ID="$TARGET"
-    else
-        RUN_ID=$(latest_run_id)
+    if [ -z "$TARGET" ]; then
+        TARGET=$(latest_run_id) || die "没有找到 run"
     fi
-    [ -z "$RUN_ID" ] && die "没有找到 run"
-    header "重新触发 Run #$RUN_ID"
-    gh run rerun "$RUN_ID" -R "$REPO" --force || die "rerun 失败"
+    header "重新触发 Run #$TARGET"
+    gh run rerun "$TARGET" -R "$REPO" --force || die "rerun 失败"
     success "已触发重新构建"
     ;;
 
 # ---------- trigger ----------
 trigger)
     check_gh
-    BRANCH="${1:-main}"
-    header "触发 workflow (分支: $BRANCH)"
-    gh workflow run build-engine.yml -R "$REPO" --ref "$BRANCH" || die "触发失败"
-    success "已触发 build-engine.yml on $BRANCH"
+    BRANCH="${1:-dev}"
+    WORKFLOW="${2:-build-mgebt.yml}"
+    header "触发 workflow $WORKFLOW (分支: $BRANCH)"
+    gh workflow run "$WORKFLOW" -R "$REPO" --ref "$BRANCH" || die "触发失败"
+    success "已触发 $WORKFLOW on $BRANCH"
     ;;
 
 # ---------- watch ----------
@@ -147,10 +167,10 @@ watch)
 branches|branch)
     check_gh
     header "远程分支"
-    gh api repos/"$REPO"/branches --jq '.[] | "\(.name)\t\(.commit.sha[0:7])\t\(.protected)"' | column -t -s $'\t'
+    gh api "repos/$REPO/branches?per_page=100" --jq '.[] | "\(.name)\t\(.commit.sha[0:7])\t\(.protected)"' | column -t -s $'\t'
     echo ""
     info "本地分支:"
-    git branch -a 2>/dev/null || true
+    check_repo && git branch -a 2>/dev/null || true
     ;;
 
 # ---------- delete-branch ----------
@@ -159,7 +179,7 @@ delete-branch)
     BRANCH="${1:-}"
     [ -z "$BRANCH" ] && die "用法: ./remote.sh delete-branch <branch-name>"
     header "删除远程分支: $BRANCH"
-    gh api -X DELETE repos/"$REPO"/git/refs/heads/"$BRANCH" && success "已删除 $BRANCH" || die "删除失败"
+    gh api -X DELETE "repos/$REPO/git/refs/heads/$BRANCH" && success "已删除 $BRANCH" || die "删除失败 (分支不存在或无权限)"
     ;;
 
 # ---------- compare ----------
@@ -167,7 +187,7 @@ compare)
     check_gh
     check_repo
     header "本地 vs 远程对比"
-    git fetch origin 2>/dev/null || die "fetch 失败(网络?)"
+    git fetch origin 2>/dev/null || warn "fetch 失败(网络问题)，显示缓存状态"
 
     for branch in main dev; do
         LOCAL=$(git rev-parse "$branch" 2>/dev/null || echo "N/A")
@@ -222,22 +242,45 @@ artifact|artifacts)
     shift || true
     case "$SUB" in
         list)
-            RUN_ID=$(latest_run_id)
-            [ -z "$RUN_ID" ] && die "没有 run"
+            RUN_ID="${1:-}"
+            if [ -z "$RUN_ID" ]; then
+                RUN_ID=$(latest_run_id) || die "没有 run"
+            fi
             header "Run #$RUN_ID 产物"
-            gh run view "$RUN_ID" -R "$REPO" --json artifacts --jq '.artifacts[] | "\(.name) (\(.sizeInBytes) bytes) ID:\(.databaseId)"'
+            gh run view "$RUN_ID" -R "$REPO" --json artifacts \
+                --jq '.artifacts[]? | "\(.name)  \(.sizeInBytes) bytes  ID:\(.databaseId)"' 2>/dev/null \
+                || warn "该 run 没有产物或 gh 版本不支持"
             ;;
         download)
-            RUN_ID=$(latest_run_id)
-            [ -z "$RUN_ID" ] && die "没有 run"
-            DEST="${1:-./artifacts}"
+            RUN_ID=""
+            DEST=""
+            ARTIFACT_NAME=""
+            while [ $# -gt 0 ]; do
+                case "$1" in
+                    -r|--run)   RUN_ID="$2"; shift 2 ;;
+                    -d|--dest)  DEST="$2"; shift 2 ;;
+                    -n|--name)  ARTIFACT_NAME="$2"; shift 2 ;;
+                    *)          DEST="${1}"; shift ;;
+                esac
+            done
+            if [ -z "$RUN_ID" ]; then
+                RUN_ID=$(latest_run_id) || die "没有 run"
+            fi
+            if [ -z "$DEST" ]; then
+                DEST="./artifacts"
+            fi
             mkdir -p "$DEST"
             header "下载 Run #$RUN_ID 产物到 $DEST"
-            gh run download "$RUN_ID" -R "$REPO" -D "$DEST" || die "下载失败"
+            if [ -n "$ARTIFACT_NAME" ]; then
+                gh run download "$RUN_ID" -R "$REPO" -n "$ARTIFACT_NAME" -D "$DEST" || die "下载失败"
+            else
+                gh run download "$RUN_ID" -R "$REPO" -D "$DEST" || die "下载失败"
+            fi
             success "产物已下载到 $DEST"
+            ls -lh "$DEST/"
             ;;
         *)
-            die "用法: ./remote.sh artifact [list|download [dir]]"
+            die "用法: ./remote.sh artifact [list [run_id] | download [-r run_id] [-n name] [-d dest]]"
             ;;
     esac
     ;;
@@ -246,17 +289,26 @@ artifact|artifacts)
 net|network)
     header "网络诊断"
     info "GitHub.com 连通性:"
-    curl -sI --connect-timeout 5 https://github.com >/dev/null && success "GitHub HTTP OK" || warn "GitHub HTTP 不通"
+    if curl -sI --connect-timeout 5 https://github.com >/dev/null 2>&1; then
+        success "GitHub HTTP OK"
+    else
+        warn "GitHub HTTP 不通"
+    fi
 
     info "API 连通性:"
-    gh api repos/"$REPO" --jq '"  Repo: \(.full_name)\n  Default branch: \(.default_branch)\n  Updated: \(.updated_at)"' 2>/dev/null || warn "API 不通"
+    gh api "repos/$REPO" --jq '"  Repo: \(.full_name)\n  Default branch: \(.default_branch)\n  Updated: \(.updated_at)"' 2>/dev/null || warn "API 不通"
 
     info "DNS 解析:"
     getent hosts github.com 2>/dev/null || nslookup github.com 2>/dev/null | head -5 || warn "DNS 解析失败"
 
     info "代理设置:"
     env | grep -i proxy || echo "  无代理环境变量"
-    git config --global http.proxy 2>/dev/null && echo "  git proxy 已设置" || echo "  git proxy 未设置"
+    local_proxy=$(git config --global http.proxy 2>/dev/null)
+    if [ -n "$local_proxy" ]; then
+        echo "  git proxy: $local_proxy"
+    else
+        echo "  git proxy 未设置"
+    fi
     ;;
 
 # ---------- repo ----------
@@ -264,16 +316,24 @@ repo|info)
     check_gh
     header "仓库信息"
     gh repo view "$REPO" --json name,description,defaultBranchRef,isEmpty,createdAt,updatedAt,pushedAt,sshUrl,url --jq '
-"  名称: \(.name)\n  描述: \(.description // "无")\n  默认分支: \(.defaultBranchRef.name)\n  空仓库: \(.isEmpty)\n  创建: \(.createdAt)\n  更新: \(.updatedAt)\n  最后推送: \(.pushedAt)\n  URL: \(.url)\n  SSH: \(.sshUrl)"
+"  名称: \(.name)
+  描述: \(.description // "无")
+  默认分支: \(.defaultBranchRef.name)
+  空仓库: \(.isEmpty)
+  创建: \(.createdAt)
+  更新: \(.updatedAt)
+  最后推送: \(.pushedAt)
+  URL: \(.url)
+  SSH: \(.sshUrl)"
     '
     ;;
 
 # ---------- clean ----------
 clean)
     check_gh
-    header "远程分支清理"
+    header "远程分支清理 (保留 main/dev)"
     info "以下远程分支可被清理:"
-    gh api repos/"$REPO"/branches --jq '.[].name' | while read -r b; do
+    gh api "repos/$REPO/branches?per_page=100" --jq '.[].name' | while read -r b; do
         case "$b" in
             main|dev|develop|master) ;;
             *) echo "  可删: $b" ;;
@@ -296,26 +356,30 @@ help|-h|--help|"")
     echo "========================================"
     echo ""
     echo "CI 相关:"
-    echo "  ci, status       自适应宽度 CI 状态表"
-    echo "  fails             只看失败 runs"
-    echo "  log               最新 run 完整日志"
-    echo "  fail, error       只看失败部分"
-    echo "  rerun [run_id]    重新触发"
-    echo "  trigger [branch]  手动触发"
-    echo "  watch             实时监听"
+    echo "  ci, status              CI 状态表"
+    echo "  fails                    只看失败 runs"
+    echo "  log [run_id]             完整日志"
+    echo "  fail, error [run_id]     失败日志"
+    echo "  rerun [run_id]           重新触发"
+    echo "  trigger [branch] [wf]    手动触发 (默认 dev + build-mgebt.yml)"
+    echo "  watch                    实时监听"
     echo ""
     echo "分支 & 仓库:"
-    echo "  branches          远程分支"
-    echo "  delete-branch <n> 删远程分支"
-    echo "  compare           本地 vs 远程"
-    echo "  repo              仓库信息"
+    echo "  branches                 远程分支"
+    echo "  delete-branch <name>     删远程分支"
+    echo "  compare                  本地 vs 远程"
+    echo "  clean                    列出可清理分支"
+    echo "  repo                     仓库信息"
     echo ""
     echo "产物:"
-    echo "  artifact list/download"
+    echo "  artifact list [run_id]                    列出产物"
+    echo "  artifact download [-r id] [-n name] [-d dest]"
     echo ""
     echo "工具:"
-    echo "  net               网络诊断"
-    echo "  url               克隆地址"
+    echo "  net                      网络诊断"
+    echo "  url                      克隆地址"
+    echo "  pr [list|create|view]    PR 管理"
+    echo "  release [list|download]   Release 管理"
     echo ""
     ;;
 
