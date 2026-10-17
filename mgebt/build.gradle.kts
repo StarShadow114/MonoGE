@@ -30,7 +30,7 @@ tasks.jar {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
 
-tasks.register<JavaExec>("run") {
+tasks.register<JavaExec>("run-mgebt") {
     dependsOn("jar")
     classpath = files(tasks.jar.get().archiveFile)
     mainClass.set("com.monoge.mgebt.MainKt")
