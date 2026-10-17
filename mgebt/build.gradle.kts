@@ -29,3 +29,13 @@ tasks.jar {
     from(configurations.runtimeClasspath.get().map { if (it.isDirectory) it else zipTree(it) })
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
+
+tasks.register<JavaExec>("run") {
+    dependsOn("jar")
+    classpath = files(tasks.jar.get().archiveFile)
+    mainClass.set("com.monoge.mgebt.MainKt")
+    // 透传命令行参数：./gradlew run --args="init -n test"
+    if (project.hasProperty("args")) {
+        args = (project.property("args") as String).split(" ")
+    }
+}

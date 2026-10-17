@@ -1,26 +1,25 @@
 package com.monoge.mgebt.cli.commands
 
 import picocli.CommandLine
-import picocli.CommandLine.Command
-import picocli.CommandLine.Parameters
 
-@Command(
+@CommandLine.Command(
     name = "task",
     description = ["Run a specific build task"]
 )
 class TaskCommand : Runnable {
+    @CommandLine.Option(names = ["-h", "--help"], help = true)
+    var helpRequested: Boolean = false
 
-    @Parameters(index = "0", description = ["Task name to run"])
-    var taskName: String? = null
+    @CommandLine.Parameters(index = "0", description = ["Task name to run"])
+    lateinit var taskName: String
 
     override fun run() {
-        if (taskName == null) {
-            println("✗ No task specified. Usage: mgebt task <task-name>")
+        if (helpRequested) {
+            CommandLine.usage(this, System.out)
             return
         }
 
-        println("→ Running task: $taskName")
-        // TODO: Phase 3.3 - task system + incremental fingerprint
-        println("✓ Task '$taskName' complete (stub).")
+        println("Running task: $taskName")
+        println("  (task execution engine will be implemented in stage 3.3)")
     }
 }

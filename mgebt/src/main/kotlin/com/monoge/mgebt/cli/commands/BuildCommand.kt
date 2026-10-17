@@ -1,36 +1,32 @@
 package com.monoge.mgebt.cli.commands
 
 import picocli.CommandLine
-import picocli.CommandLine.Command
-import picocli.CommandLine.Option
-import java.io.File
 
-@Command(
+@CommandLine.Command(
     name = "build",
     description = ["Build the project (APK or JAR)"]
 )
 class BuildCommand : Runnable {
+    @CommandLine.Option(names = ["-h", "--help"], help = true)
+    var helpRequested: Boolean = false
 
-    @Option(names = ["-v", "--verbose"], description = ["Enable verbose output"])
+    @CommandLine.Option(names = ["-v", "--verbose"], description = ["Enable verbose output"])
     var verbose: Boolean = false
 
-    override fun run() {
-        println("→ Starting build...")
+    @CommandLine.Option(names = ["-t", "--target"], description = ["Build target: android, jar, all"], defaultValue = "all")
+    var target: String = "all"
 
-        val configFile = File("project_config.toml")
-        if (!configFile.exists()) {
-            println("✗ No project_config.toml found. Run 'mgebt init' first.")
+    @CommandLine.Option(names = ["-o", "--output"], description = ["Output directory"])
+    var outputDir: String? = null
+
+    override fun run() {
+        if (helpRequested) {
+            CommandLine.usage(this, System.out)
             return
         }
 
-        // TODO: Phase 3.4 - full Android build pipeline
-        println("→ Reading configuration...")
-        println("→ Compiling sources...")
-        println("→ Packaging output...")
-
-        val outDir = File("build/out")
-        if (!outDir.exists()) outDir.mkdirs()
-
-        println("✓ Build complete. Output in build/out/")
+        println("Building project (target=$target, verbose=$verbose)...")
+        if (outputDir != null) println("  output=$outputDir")
+        println("  (build logic will be implemented in stage 3.3)")
     }
 }
