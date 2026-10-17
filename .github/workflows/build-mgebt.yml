@@ -56,5 +56,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: mgebt-jar
-          path: mgebt/build/libs/mgebt-*.jar
+          path: mgebt/build/libs/mgebt-0.1.0-stage3.jar
           retention-days: 7
